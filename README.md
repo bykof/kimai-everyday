@@ -1,5 +1,7 @@
 # kimai-everyday
 
+![Demo GIF](docs/demo.gif)
+
 A small TUI that turns natural-language recurrence sentences into Kimai
 timesheet entries.
 
