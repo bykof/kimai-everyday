@@ -13,10 +13,16 @@ See [CONTEXT.md](./CONTEXT.md) for the domain glossary and
 ## Install
 
 ```sh
-pipx install .
+pipx install kimai-everyday
 ```
 
-Requires Python 3.11+.
+Or, if you prefer plain `pip`:
+
+```sh
+pip install kimai-everyday
+```
+
+Requires Python 3.11+. See the package on [PyPI](https://pypi.org/project/kimai-everyday/).
 
 ## First run
 
@@ -50,16 +56,27 @@ Preview table → confirmation → POST loop with progress bar → summary.
 The sentence is parsed by Claude Haiku. It accepts free-form German or English,
 including:
 
+German:
+
 - *"jeden Tag im Juni von 09:00 bis 17:00 Uhr"*
 - *"Montag bis Donnerstag in der ersten Maiwoche, 08–12 und 13–17"*
 - *"die nächsten zwei Wochen, 9–18 Uhr, außer Pfingstmontag"*
 - *"jeden Werktag im Mai, auch am Samstag den 17."*
 
+English:
+
+- *"every weekday in June from 09:00 to 17:00"*
+- *"Monday through Thursday next week, 08–12 and 13–17"*
+- *"the next two weeks, 9 to 6, except the Friday after Easter"*
+- *"every workday in May, also Saturday the 17th"*
+
 Weekends and dates returned by Kimai's `/api/public-holidays` are skipped by
 default. The user can opt them in with phrases like *"auch am Samstag den 17.
-Mai"* or *"auch am Tag der Arbeit"*.
+Mai"* or *"also on Labour Day"*.
 
-## Tests
+## Development
+
+Clone the repo and install from source:
 
 ```sh
 pip install -e ".[dev]"
