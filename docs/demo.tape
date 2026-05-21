@@ -13,8 +13,8 @@
 # are actually created, so this is safe to re-record.
 #
 # Things you'll likely want to tweak before recording:
-#   - The project / activity filter strings (search for "EDIT:")
-#   - The pattern sentence
+#   - The project / activity hints inside the sentence (search for "kimai" and "dev")
+#   - The dates / time blocks
 #   - FontSize / Width / Height if the preview table wraps
 
 Output docs/demo.gif
@@ -32,51 +32,16 @@ Hide
 Type "clear" Enter
 Show
 
+# The full one-liner: sentence carries the project/activity hints too.
+# EDIT: tweak "kimai" and "dev" so they match a project + activity on your instance.
 Sleep 800ms
-Type "kimai-everyday --dry-run"
-Sleep 600ms
-Enter
-
-# "Loading projects..." spinner runs for ~500ms-2s depending on Kimai.
-Sleep 2500ms
-
-# The autocomplete pre-fills with the last-used project (or the first
-# alphabetical one). Ctrl+U clears that default so our Type below
-# replaces it instead of appending. Two Downs then move the highlight
-# from the input row onto the first filtered match before Enter picks it.
-#
-# EDIT: type enough of your project name to filter the autocomplete to one match.
-Ctrl+U
-Type "kimai"
+Type "kimai-everyday --dry-run 'every weekday in the first week of June from 09:00 to 12:00 and 13:00 to 17:00 for project kimai and activity dev'"
 Sleep 800ms
-Down 2
-Sleep 400ms
 Enter
 
-# "Loading activities..." spinner.
-Sleep 2000ms
-
-# Same Ctrl+U + Down-twice dance for the activity prompt.
-# EDIT: type enough of your activity name to filter to one match.
-Ctrl+U
-Type "dev"
-Sleep 800ms
-Down 1
-Sleep 400ms
-Enter
-
-# Description prompt (optional). Leave blank to keep the demo short.
-Sleep 600ms
-Enter
-
-# Pattern prompt — this is the headline moment.
-Sleep 600ms
-Type "every weekday in the first week of June from 09:00 to 12:00 and 13:00 to 17:00"
-Sleep 1500ms
-Enter
-
-# "Parsing pattern..." (Claude Haiku, usually 1-2s) then preview table.
-Sleep 4000ms
-
-# Let the viewer read the preview table.
+# "Loading catalog..." (3 small HTTP calls in parallel) then "Parsing pattern..."
+# (Claude Haiku, usually 1-2s). Banner + preview table follow.
 Sleep 5000ms
+
+# Let the viewer read the banner and preview table.
+Sleep 7000ms

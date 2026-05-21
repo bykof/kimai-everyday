@@ -11,6 +11,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="kimai-everyday",
         description="Create recurring Kimai timesheet entries from a natural-language pattern.",
+        epilog=(
+            "Subcommands:\n"
+            "  config        Re-run the setup wizard to update saved settings.\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "sentence",
@@ -33,18 +38,21 @@ def build_parser() -> argparse.ArgumentParser:
             "Pattern). Useful when the LLM is unavailable or you want manual control."
         ),
     )
-    sub = parser.add_subparsers(dest="command")
-    sub.add_parser("config", help="Re-run the setup wizard to update saved settings.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    if args.command == "config":
+    raw = list(argv) if argv is not None else sys.argv[1:]
+
+    # Carve out the `config` subcommand before argparse runs. An optional positional
+    # `sentence` argument can't coexist with a subparser — argparse would route any
+    # positional into the subparser. So we handle the one subcommand we have manually.
+    if raw and raw[0] == "config":
         existing = config_module.load()
         config_module.run_setup(existing)
         return 0
 
+    args = build_parser().parse_args(raw)
     config = config_module.load_or_setup()
     if args.classic:
         if args.sentence:
