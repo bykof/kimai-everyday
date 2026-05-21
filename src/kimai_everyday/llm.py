@@ -6,7 +6,7 @@ from typing import Any
 
 from anthropic import Anthropic
 
-from kimai_everyday.types import DateSlot, ParsedPattern, TimeBlock
+from kimai_everyday.types import Activity, DateSlot, ParsedPattern, Project, TimeBlock
 
 MODEL = "claude-haiku-4-5-20251001"
 
@@ -50,27 +50,116 @@ PATTERN_TOOL = {
                 ),
                 "items": {"type": "string"},
             },
+            "project_id": {
+                "type": ["integer", "null"],
+                "description": (
+                    "The chosen project ID from the catalog. Set ONLY if you are confident the "
+                    "sentence unambiguously names one project. Otherwise leave null and populate "
+                    "project_candidates instead."
+                ),
+            },
+            "project_candidates": {
+                "type": "array",
+                "description": (
+                    "Project IDs from the catalog that plausibly match the sentence, when no "
+                    "single project is clearly the right answer. Order most-likely first. "
+                    "Leave empty if the sentence does not name any project."
+                ),
+                "items": {"type": "integer"},
+            },
+            "activity_id": {
+                "type": ["integer", "null"],
+                "description": (
+                    "The chosen activity ID from the catalog. Set ONLY if you are confident. "
+                    "MUST be either a global activity or one scoped to the chosen project_id. "
+                    "Otherwise leave null and populate activity_candidates."
+                ),
+            },
+            "activity_candidates": {
+                "type": "array",
+                "description": (
+                    "Activity IDs (globals or activities scoped to the chosen project) that "
+                    "plausibly match the sentence. Order most-likely first. Leave empty if the "
+                    "sentence does not name any activity."
+                ),
+                "items": {"type": "integer"},
+            },
+            "description": {
+                "type": ["string", "null"],
+                "description": (
+                    "Free-text description extracted from the sentence — text that is neither a "
+                    "date/time phrase nor a project/activity reference. Null if no such text "
+                    "exists. Do NOT echo the whole sentence here."
+                ),
+            },
         },
     },
 }
 
 
-def _system_prompt(today: date, timezone: str) -> str:
+def _format_catalog(projects: list[Project], activities: list[Activity]) -> str:
+    """Format the catalog as compact `id | label` lines for the system prompt."""
+    project_lines = "\n".join(
+        f"  {p.id} | {p.label}" for p in sorted(projects, key=lambda p: p.id)
+    )
+    project_id_by = {p.id: p for p in projects}
+    activity_lines: list[str] = []
+    for a in sorted(activities, key=lambda a: a.id):
+        if a.is_global:
+            scope = "(global)"
+        else:
+            owner = project_id_by.get(a.project_id)  # type: ignore[arg-type]
+            scope = f"(project: {owner.label})" if owner else f"(project id: {a.project_id})"
+        activity_lines.append(f"  {a.id} | {a.name} {scope}")
     return (
-        "You translate a recurrence sentence (German or English) into a list of dated time blocks.\n"
+        "PROJECTS (id | Customer / Name):\n"
+        f"{project_lines or '  (none)'}\n"
+        "\n"
+        "ACTIVITIES (id | Name (scope)):\n"
+        f"{chr(10).join(activity_lines) or '  (none)'}"
+    )
+
+
+def _system_prompt(
+    today: date,
+    timezone: str,
+    projects: list[Project],
+    activities: list[Activity],
+) -> str:
+    return (
+        "You translate a recurrence sentence (German or English) into structured data: "
+        "dated time blocks, plus the project, activity, and optional description.\n"
         f"Today is {today.isoformat()} ({today.strftime('%A')}). The user's timezone is {timezone}.\n"
         "\n"
-        "RULES:\n"
-        "- Output every individual date that the sentence covers, even weekends and holidays. "
-        "  Downstream code applies the working-day filter; you must NOT pre-filter weekends or holidays yourself.\n"
+        "DATE RULES:\n"
+        "- Output every individual date the sentence covers, even weekends and holidays. "
+        "  Downstream code applies the working-day filter; do NOT pre-filter weekends or holidays.\n"
         "- Each date has one or more time blocks (begin/end, 24h HH:MM).\n"
-        "- If the sentence has explicit opt-ins for weekends or holidays (e.g. 'auch am Samstag den 17. Mai', "
-        "  'auch am Tag der Arbeit'), include those dates in `force_dates`. Never put a date in `force_dates` unless "
-        "  the user explicitly opted it in.\n"
-        "- Resolve relative phrases ('nächste Woche', 'im Mai') against today's date. Months without a year refer to "
-        "  the soonest upcoming occurrence (current month if not past, otherwise next year).\n"
-        "- Exclusion ranges like '15. bis 23. Mai' are inclusive on both ends and must be omitted from `slots` entirely.\n"
-        "- Always call the submit_pattern tool. Do not produce any prose.\n"
+        "- Explicit weekend/holiday opt-ins (e.g. 'auch am Samstag den 17. Mai', 'auch am Tag der Arbeit') "
+        "  go in `force_dates`. Never put a date in `force_dates` unless the user explicitly opted in.\n"
+        "- Resolve relative phrases ('nächste Woche', 'im Mai') against today's date. Months without a year "
+        "  refer to the soonest upcoming occurrence (current month if not past, otherwise next year).\n"
+        "- Exclusion ranges like '15. bis 23. Mai' are inclusive on both ends and must be omitted from `slots`.\n"
+        "\n"
+        "PROJECT & ACTIVITY RULES:\n"
+        "- Use the catalog below to resolve project_id and activity_id. Match against the labels.\n"
+        "- Set `project_id` ONLY when one project clearly matches. If the sentence is ambiguous, "
+        "  put plausible IDs in `project_candidates` and leave `project_id` null.\n"
+        "- Same rule for `activity_id` / `activity_candidates`.\n"
+        "- A scoped activity (one with `(project: X)` in the catalog) is ONLY valid for project X. "
+        "  Globals are valid for any project. If the user names a scoped activity that belongs to "
+        "  a different project than the one they named, that's a mismatch — fall back to candidates.\n"
+        "- If the sentence does not mention a project or activity at all, leave both IDs null and "
+        "  both candidate lists empty. Downstream code will fall back to the user's last-used values.\n"
+        "\n"
+        "DESCRIPTION RULE:\n"
+        "- Extract any free text that isn't a date/time phrase and doesn't match a catalog name "
+        "  into `description`. If there's none, leave it null. Do NOT echo the whole sentence.\n"
+        "\n"
+        "Always call the submit_pattern tool. Do not produce any prose.\n"
+        "\n"
+        "CATALOG:\n"
+        f"{_format_catalog(projects, activities)}\n"
     )
 
 
@@ -84,12 +173,14 @@ def parse_pattern(
     today: date,
     timezone: str,
     api_key: str,
+    projects: list[Project] | None = None,
+    activities: list[Activity] | None = None,
 ) -> ParsedPattern:
     client = Anthropic(api_key=api_key)
     response = client.messages.create(
         model=MODEL,
         max_tokens=4096,
-        system=_system_prompt(today, timezone),
+        system=_system_prompt(today, timezone, projects or [], activities or []),
         tools=[PATTERN_TOOL],
         tool_choice={"type": "tool", "name": "submit_pattern"},
         messages=[{"role": "user", "content": sentence}],
@@ -154,5 +245,44 @@ def _validate(raw: Any) -> ParsedPattern:
         except ValueError as exc:
             raise LLMError(f"Invalid force_dates entry {entry!r}: {exc}") from exc
 
+    project_id = _opt_int(raw, "project_id")
+    activity_id = _opt_int(raw, "activity_id")
+    project_candidates = _int_list(raw, "project_candidates")
+    activity_candidates = _int_list(raw, "activity_candidates")
+    description = raw.get("description")
+    if description is not None and not isinstance(description, str):
+        raise LLMError(f"`description` must be a string or null: {description!r}")
+    if isinstance(description, str):
+        description = description.strip() or None
+
     slots.sort(key=lambda s: s.date)
-    return ParsedPattern(slots=tuple(slots), force_dates=frozenset(forced))
+    return ParsedPattern(
+        slots=tuple(slots),
+        force_dates=frozenset(forced),
+        project_id=project_id,
+        project_candidates=project_candidates,
+        activity_id=activity_id,
+        activity_candidates=activity_candidates,
+        description=description,
+    )
+
+
+def _opt_int(raw: dict[str, Any], key: str) -> int | None:
+    val = raw.get(key)
+    if val is None:
+        return None
+    if isinstance(val, bool) or not isinstance(val, int):
+        raise LLMError(f"`{key}` must be an integer or null: {val!r}")
+    return val
+
+
+def _int_list(raw: dict[str, Any], key: str) -> tuple[int, ...]:
+    val = raw.get(key, [])
+    if not isinstance(val, list):
+        raise LLMError(f"`{key}` must be a list: {val!r}")
+    result: list[int] = []
+    for entry in val:
+        if isinstance(entry, bool) or not isinstance(entry, int):
+            raise LLMError(f"`{key}` entry is not an integer: {entry!r}")
+        result.append(entry)
+    return tuple(result)

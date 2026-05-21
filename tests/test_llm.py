@@ -73,6 +73,63 @@ def test_validate_rejects_non_object_input():
         _validate("nope")
 
 
+def test_validate_extracts_project_activity_and_description():
+    parsed = _validate(
+        {
+            "slots": [{"date": "2026-05-04", "blocks": [{"begin": "09:00", "end": "17:00"}]}],
+            "force_dates": [],
+            "project_id": 42,
+            "project_candidates": [],
+            "activity_id": 7,
+            "activity_candidates": [],
+            "description": "refactoring auth",
+        }
+    )
+    assert parsed.project_id == 42
+    assert parsed.activity_id == 7
+    assert parsed.description == "refactoring auth"
+
+
+def test_validate_keeps_candidates_when_ids_ambiguous():
+    parsed = _validate(
+        {
+            "slots": [{"date": "2026-05-04", "blocks": [{"begin": "09:00", "end": "17:00"}]}],
+            "force_dates": [],
+            "project_id": None,
+            "project_candidates": [1, 2, 3],
+            "activity_id": None,
+            "activity_candidates": [10, 20],
+            "description": None,
+        }
+    )
+    assert parsed.project_id is None
+    assert parsed.project_candidates == (1, 2, 3)
+    assert parsed.activity_candidates == (10, 20)
+    assert parsed.description is None
+
+
+def test_validate_treats_empty_description_as_none():
+    parsed = _validate(
+        {
+            "slots": [{"date": "2026-05-04", "blocks": [{"begin": "09:00", "end": "17:00"}]}],
+            "force_dates": [],
+            "description": "   ",
+        }
+    )
+    assert parsed.description is None
+
+
+def test_validate_rejects_non_integer_project_id():
+    with pytest.raises(LLMError, match="project_id"):
+        _validate(
+            {
+                "slots": [{"date": "2026-05-04", "blocks": [{"begin": "09:00", "end": "10:00"}]}],
+                "force_dates": [],
+                "project_id": "42",
+            }
+        )
+
+
 def test_parse_pattern_extracts_tool_input(monkeypatch):
     """Smoke-test the full parse_pattern path with a stubbed Anthropic client."""
     captured = {}

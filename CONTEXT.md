@@ -7,19 +7,37 @@ via its REST API.
 
 ### Pattern
 A free-form natural-language sentence (German or English) that describes one or
-more recurring **time blocks** over a **date range**, with optional **exclusions**.
+more recurring **time blocks** over a **date range**, with optional
+**exclusions**, **project**, **activity**, and **description**.
 
 Example: *"jeden Tag von 08:00 bis 12:00 Uhr und von 13:00 bis 17:00 Uhr für den
-ganzen Mai außer vom 15. bis 23. Mai."*
+ganzen Mai außer vom 15. bis 23. Mai, Acme Migration, Development, refactoring
+auth."*
 
 A Pattern is parsed into a list of **Slots** (one POST per Slot to
-`/api/timesheets`). The parsing step is non-deterministic (LLM) — the user
-always confirms the expanded preview before any Slot is created.
+`/api/timesheets`). Parsing is non-deterministic (LLM): one combined call
+extracts dates, times, project, activity, and description from the sentence,
+using the fetched **Catalog** as the source of valid project/activity IDs. The
+user always confirms the expanded preview before any Slot is created.
 
 ### Slot
-A single `(date, begin_time, end_time, project, activity)` tuple that becomes
-exactly one Kimai timesheet entry. Slots inherit `project` and `activity` from
-the Pattern; the LLM only produces dates and time ranges.
+A single `(date, begin_time, end_time, project, activity, description)` tuple
+that becomes exactly one Kimai timesheet entry. The LLM resolves `project` and
+`activity` from the Pattern sentence against the Catalog; all Slots produced
+from one Pattern share the same project, activity, and description.
+
+### Catalog
+The full list of visible Kimai projects and activities (both project-scoped and
+global) fetched at startup. Sent to the LLM as compact `id | label` lines so it
+can resolve `project` and `activity` directly to IDs. Not cached between runs
+— freshness over speed.
+
+### Disambiguation
+When the LLM is not confident which project or activity the sentence refers
+to, it returns a short candidate list instead of a single ID. The user
+resolves it with a single keystroke (numbered short-list prompt). If the LLM
+is wrong entirely, the user escapes to the full autocomplete picker.
+Disambiguation never re-parses the dates — they're sticky once parsed.
 
 ### Working day
 By default: Monday – Friday, **excluding** any date returned by Kimai's

@@ -8,6 +8,26 @@ import httpx
 from kimai_everyday.types import Activity, Project, PublicHoliday
 
 
+def _merge_activities(globals_raw: list[dict[str, Any]], scoped_raw: list[dict[str, Any]]) -> list[Activity]:
+    seen: set[int] = set()
+    activities: list[Activity] = []
+    for item in [*globals_raw, *scoped_raw]:
+        aid = int(item["id"])
+        if aid in seen:
+            continue
+        seen.add(aid)
+        raw_project = item.get("project")
+        project_id_value: int | None
+        if raw_project is None:
+            project_id_value = None
+        elif isinstance(raw_project, dict):
+            project_id_value = int(raw_project["id"])
+        else:
+            project_id_value = int(raw_project)
+        activities.append(Activity(id=aid, name=item["name"], project_id=project_id_value))
+    return activities
+
+
 class KimaiError(RuntimeError):
     def __init__(self, message: str, status: int | None = None, body: str | None = None) -> None:
         super().__init__(message)
@@ -87,25 +107,14 @@ class KimaiClient:
             "GET", "/api/activities", params={"project": project_id, "visible": 1}
         )
         globals_raw = self._request("GET", "/api/activities", params={"globals": 1, "visible": 1})
-        seen: set[int] = set()
-        activities: list[Activity] = []
-        for item in [*globals_raw, *scoped_raw]:
-            aid = int(item["id"])
-            if aid in seen:
-                continue
-            seen.add(aid)
-            raw_project = item.get("project")
-            project_id_value: int | None
-            if raw_project is None:
-                project_id_value = None
-            elif isinstance(raw_project, dict):
-                project_id_value = int(raw_project["id"])
-            else:
-                project_id_value = int(raw_project)
-            activities.append(
-                Activity(id=aid, name=item["name"], project_id=project_id_value)
-            )
-        return activities
+        return _merge_activities(globals_raw, scoped_raw)
+
+    def list_all_activities(self) -> list[Activity]:
+        # No `project` filter → all visible project-scoped activities across every project.
+        # `globals=1` is required to also include globals; without it Kimai excludes them.
+        scoped_raw = self._request("GET", "/api/activities", params={"visible": 1})
+        globals_raw = self._request("GET", "/api/activities", params={"globals": 1, "visible": 1})
+        return _merge_activities(globals_raw, scoped_raw)
 
     def list_public_holidays(self, begin: date, end: date) -> list[PublicHoliday]:
         # Kimai's `begin`/`end` query params are HTML5 datetime-local
