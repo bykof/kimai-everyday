@@ -36,19 +36,39 @@ def test_url_with_trailing_api_is_normalized():
 
 
 @respx.mock
-def test_list_projects_parses_customer(client):
+def test_list_projects_resolves_integer_customer_id(client):
+    # Real Kimai shape: `customer` is an integer ID, resolved via /api/customers.
     respx.get(f"{BASE}/api/projects").mock(
         return_value=httpx.Response(
             200,
             json=[
-                {"id": 1, "name": "Website", "customer": {"id": 2, "name": "ACME"}},
+                {"id": 1, "name": "Website", "customer": 2},
                 {"id": 5, "name": "Internal", "customer": None},
             ],
         )
     )
+    respx.get(f"{BASE}/api/customers").mock(
+        return_value=httpx.Response(200, json=[{"id": 2, "name": "ACME"}])
+    )
     projects = client.list_projects()
     assert projects[0].label == "ACME / Website"
     assert projects[1].customer_name == "—"
+
+
+@respx.mock
+def test_list_projects_handles_inline_customer_object(client):
+    # Defensive fallback: some Kimai configurations expand `customer` inline.
+    respx.get(f"{BASE}/api/projects").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"id": 1, "name": "Website", "customer": {"id": 2, "name": "ACME"}}],
+        )
+    )
+    respx.get(f"{BASE}/api/customers").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    projects = client.list_projects()
+    assert projects[0].label == "ACME / Website"
 
 
 @respx.mock

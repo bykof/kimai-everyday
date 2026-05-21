@@ -86,11 +86,21 @@ class KimaiClient:
         return self._request("GET", "/api/users/me")
 
     def list_projects(self, *, visible: int = 1) -> list[Project]:
-        raw = self._request("GET", "/api/projects", params={"visible": visible})
+        # Kimai returns `customer` as a bare integer ID (per OpenAPI). We need a second
+        # call to /api/customers to resolve those IDs to names.
+        raw_projects = self._request("GET", "/api/projects", params={"visible": visible})
+        customer_names = self._list_customer_names(visible=visible)
         projects: list[Project] = []
-        for item in raw:
-            customer = item.get("customer") or {}
-            customer_name = customer.get("name") if isinstance(customer, dict) else None
+        for item in raw_projects:
+            raw_customer = item.get("customer")
+            customer_name: str | None
+            if isinstance(raw_customer, dict):
+                # Some Kimai versions/configurations expand the customer inline.
+                customer_name = raw_customer.get("name")
+            elif isinstance(raw_customer, int):
+                customer_name = customer_names.get(raw_customer)
+            else:
+                customer_name = None
             projects.append(
                 Project(
                     id=int(item["id"]),
@@ -99,6 +109,10 @@ class KimaiClient:
                 )
             )
         return projects
+
+    def _list_customer_names(self, *, visible: int = 1) -> dict[int, str]:
+        raw = self._request("GET", "/api/customers", params={"visible": visible})
+        return {int(c["id"]): c["name"] for c in raw if c.get("name")}
 
     def list_activities(self, project_id: int) -> list[Activity]:
         # The API returns project-linked activities when filtered by project; we additionally
