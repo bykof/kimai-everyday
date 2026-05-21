@@ -493,10 +493,15 @@ def _print_banner(
     description: str | None,
     console: Console,
 ) -> None:
-    lines = [
-        f"[bold]Project:[/bold]  {project.label}{_provenance_note(project_provenance)}",
-        f"[bold]Activity:[/bold] {_activity_label(activity)}{_provenance_note(activity_provenance)}",
-    ]
+    lines: list[str] = []
+    if project.customer_name and project.customer_name != "—":
+        lines.append(f"[bold]Customer:[/bold] {project.customer_name}")
+    lines.append(
+        f"[bold]Project:[/bold]  {project.name}{_provenance_note(project_provenance)}"
+    )
+    lines.append(
+        f"[bold]Activity:[/bold] {_activity_label(activity)}{_provenance_note(activity_provenance)}"
+    )
     if description:
         lines.append(f"[bold]Description:[/bold] [italic]{description}[/italic]")
     console.print()
